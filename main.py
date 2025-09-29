@@ -7,7 +7,7 @@ from database import engine, SessionLocal, Base
 from datetime import date
 from auth import get_password_hash, verify_password, create_access_token, decode_access_token
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-# Create database tables
+
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
@@ -24,19 +24,20 @@ def get_db():
 class UserCreate(BaseModel):
     username: str
     password: str
-
+    role: str 
 # class UserLogin(BaseModel):
 #     username: str
 #     password: str
 
 @app.post("/register/")
 def register(user: UserCreate, db: Session = Depends(get_db)):
+    if user.role not in ["student", "teacher"]:
+        raise HTTPException(status_code=400, detail="invalid role ")
     db_user = db.query(User).filter(User.username == user.username).first()
-    
     if db_user:
         raise HTTPException(status_code=400, detail="Username already exists")
     hashed_pw = get_password_hash(user.password)
-    new_user = User(username=user.username, hashed_password=hashed_pw, role="student")
+    new_user = User(username=user.username, hashed_password=hashed_pw, role=user.role)
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
@@ -85,7 +86,13 @@ def admin_required(current_user: User = Depends(get_current_user)):
             detail="Only admins can view all borrow records"
         )
     return current_user
+def teacher_required(current_user: User = Depends(get_current_user)):
+    if current_user.role!= "teacher":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only teachers can access"
 
+        )
 
 class BookRequest(BaseModel):
     book_name: str 
@@ -123,7 +130,7 @@ class StudentRequest(BaseModel):
 
 
 @app.post("/students/", tags=["Students"])
-async def create_student(student_request:StudentRequest, db: Session = Depends(get_db),current_user: User = Depends(admin_required)):
+async def create_student(student_request:StudentRequest, db: Session = Depends(get_db),current_user: User = Depends(teacher_required)):
     new_student = Student(**student_request.dict())
     db.add(new_student)
     db.commit()
